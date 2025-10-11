@@ -25,4 +25,4 @@ jobs:
       - name: Run AQI + Weather fetch script
         env:
           HOPSWORKS_API_KEY: ${{ secrets.colab_key }}  # Use secret name only
-        run: python .github/workflows/fetch_API_data.py   # Make sure this file exists in repo root
+        run: python fetch_API_data.py   # Make sure this file exists in repo root
