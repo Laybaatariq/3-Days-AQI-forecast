@@ -21,10 +21,10 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install requests pandas hopsworks openmeteo-requests retry-requests
+          pip install "hopsworks[python]==4.2.*" requests pandas openmeteo-requests retry-requests pyarrow
 
       - name: Run AQI + Weather fetch script
-        working-directory: ${{ github.workspace }}  # ensure path is repo root
+        working-directory: ${{ github.workspace }}  # repo root
         env:
           HOPSWORKS_API_KEY: ${{ secrets.colab_key }}
         run: python scripts/fetch_API_data.py
