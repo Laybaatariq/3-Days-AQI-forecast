@@ -6,14 +6,14 @@ from datetime import datetime, timedelta, timezone
 import hopsworks
 
 # ----------------------------
-# 1️⃣ Configuration
+# Configuration
 # ----------------------------
 latitude = 24.8608   # Karachi
 longitude = 67.0104
 
 # Fetch last 48 hours
 end_date = datetime.now(timezone.utc).date()
-start_date = end_date - timedelta(days=2)
+start_date = end_date - timedelta(days=1)
 
 # AQI API (Open-Meteo Air Quality)
 aqi_url = (
@@ -33,9 +33,9 @@ weather_url = (
 )
 
 # ----------------------------
-# 2️⃣ Fetch Data
+#  Fetch Data
 # ----------------------------
-print(f"📡 Fetching AQI and weather data from {start_date} to {end_date}...")
+print(f" Fetching AQI and weather data from {start_date} to {end_date}...")
 aqi_data = requests.get(aqi_url).json()
 weather_data = requests.get(weather_url).json()
 
@@ -43,19 +43,19 @@ aqi_df = pd.DataFrame(aqi_data.get("hourly", {}))
 weather_df = pd.DataFrame(weather_data.get("hourly", {}))
 
 if "time" not in aqi_df.columns or "time" not in weather_df.columns:
-    raise ValueError("❌ Missing 'time' column from one of the APIs.")
+    raise ValueError(" Missing 'time' column from one of the APIs.")
 
 # Convert timestamps
 aqi_df["time"] = pd.to_datetime(aqi_df["time"])
 weather_df["time"] = pd.to_datetime(weather_df["time"])
 
 # ----------------------------
-# 3️⃣ Merge AQI + Weather Data
+# Merge AQI + Weather Data
 # ----------------------------
 merged_df = pd.merge(aqi_df, weather_df, on="time", how="inner")
 
 # ----------------------------
-# 4️⃣ AQI Breakpoints (US EPA Standard)
+# AQI Breakpoints (US EPA Standard)
 # ----------------------------
 breakpoints = {
     "pm2_5": [(0.0,12.0,0,50), (12.1,35.4,51,100), (35.5,55.4,101,150),
@@ -84,18 +84,14 @@ def compute_aqi_for_pollutant(pollutant, conc):
 
 def calculate_overall_aqi(row):
     pollutants = ["pm2_5", "pm10", "ozone", "carbon_monoxide", "nitrogen_dioxide", "sulphur_dioxide"]
-    aqi_values = []
-    for p in pollutants:
-        val = compute_aqi_for_pollutant(p, row.get(p))
-        if val is not None:
-            aqi_values.append(val)
+    aqi_values = [compute_aqi_for_pollutant(p, row.get(p)) for p in pollutants if row.get(p) is not None]
     return max(aqi_values) if aqi_values else None
 
 merged_df["AQI"] = merged_df.apply(calculate_overall_aqi, axis=1)
 merged_df.columns = merged_df.columns.str.lower()
 
 # ----------------------------
-# 5️⃣ Reorder Columns
+# Reorder Columns
 # ----------------------------
 column_order = [
     "time", "aqi", "pm2_5", "pm10", "ozone",
@@ -105,14 +101,14 @@ column_order = [
 ]
 merged_df = merged_df[[col for col in column_order if col in merged_df.columns]]
 
-print("✅ Preview of merged data:")
+print(" Preview of merged data:")
 print(merged_df.head())
 
 # ----------------------------
-# 6️⃣ Upload to Hopsworks
+# Upload to Hopsworks (Avoid Duplicates)
 # ----------------------------
-print("\n🚀 Connecting to Hopsworks...")
-api_key = os.getenv("HOPSWORKS_API_KEY")  # Use secret from GitHub Actions
+print("\n Connecting to Hopsworks...")
+api_key = os.getenv("HOPSWORKS_API_KEY")  # Use GitHub secret
 project = hopsworks.login(api_key_value=api_key)
 fs = project.get_feature_store()
 
@@ -124,8 +120,21 @@ aqi_fg = fs.get_or_create_feature_group(
     online_enabled=True
 )
 
+#  Fetch existing timestamps from feature group to avoid duplicates
+print("Checking existing data to prevent duplicates...")
 try:
-    aqi_fg.insert(merged_df)
-    print("🎉 Data successfully uploaded to Hopsworks Feature Store!")
+    existing_df = aqi_fg.read()
+    existing_times = set(existing_df["time"].astype(str))
 except Exception as e:
-    print(f"❌ Failed to insert data into Hopsworks: {e}")
+    print(f"Could not read existing feature group (maybe empty): {e}")
+    existing_times = set()
+
+# Filter out already existing records
+new_data = merged_df[~merged_df["time"].astype(str).isin(existing_times)]
+
+if not new_data.empty:
+    print(f"{len(new_data)} new records to insert (filtered for duplicates).")
+    aqi_fg.insert(new_data)
+    print(" New unique data uploaded to Hopsworks Feature Store!")
+else:
+    print("No new data to insert — feature store is already up to date.")
