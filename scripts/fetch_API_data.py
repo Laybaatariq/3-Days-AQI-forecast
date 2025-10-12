@@ -33,9 +33,9 @@ weather_url = (
 )
 
 # ----------------------------
-#  Fetch Data
+# Fetch Data
 # ----------------------------
-print(f" Fetching AQI and weather data from {start_date} to {end_date}...")
+print(f"📡 Fetching AQI and weather data from {start_date} to {end_date}...")
 aqi_data = requests.get(aqi_url).json()
 weather_data = requests.get(weather_url).json()
 
@@ -43,7 +43,7 @@ aqi_df = pd.DataFrame(aqi_data.get("hourly", {}))
 weather_df = pd.DataFrame(weather_data.get("hourly", {}))
 
 if "time" not in aqi_df.columns or "time" not in weather_df.columns:
-    raise ValueError(" Missing 'time' column from one of the APIs.")
+    raise ValueError("❌ Missing 'time' column from one of the APIs.")
 
 # Convert timestamps
 aqi_df["time"] = pd.to_datetime(aqi_df["time"])
@@ -73,6 +73,7 @@ breakpoints = {
 }
 
 def compute_aqi_for_pollutant(pollutant, conc):
+    """Compute AQI for a single pollutant concentration using breakpoints."""
     if pollutant not in breakpoints or pd.isna(conc):
         return None
     for c_lo, c_hi, i_lo, i_hi in breakpoints[pollutant]:
@@ -83,10 +84,13 @@ def compute_aqi_for_pollutant(pollutant, conc):
     return None
 
 def calculate_overall_aqi(row):
+    """Calculate the overall AQI from multiple pollutants."""
     pollutants = ["pm2_5", "pm10", "ozone", "carbon_monoxide", "nitrogen_dioxide", "sulphur_dioxide"]
-    aqi_values = [compute_aqi_for_pollutant(p, row.get(p)) for p in pollutants if row.get(p) is not None]
+    aqi_values = [compute_aqi_for_pollutant(p, row.get(p)) for p in pollutants]
+    aqi_values = [v for v in aqi_values if v is not None]  # filter out missing
     return max(aqi_values) if aqi_values else None
 
+# Apply AQI calculation
 merged_df["AQI"] = merged_df.apply(calculate_overall_aqi, axis=1)
 merged_df.columns = merged_df.columns.str.lower()
 
@@ -101,13 +105,13 @@ column_order = [
 ]
 merged_df = merged_df[[col for col in column_order if col in merged_df.columns]]
 
-print(" Preview of merged data:")
+print("✅ Preview of merged data:")
 print(merged_df.head())
 
 # ----------------------------
 # Upload to Hopsworks (Avoid Duplicates)
 # ----------------------------
-print("\n Connecting to Hopsworks...")
+print("\n🔗 Connecting to Hopsworks...")
 api_key = os.getenv("HOPSWORKS_API_KEY")  # Use GitHub secret
 project = hopsworks.login(api_key_value=api_key)
 fs = project.get_feature_store()
@@ -120,21 +124,21 @@ aqi_fg = fs.get_or_create_feature_group(
     online_enabled=True
 )
 
-#  Fetch existing timestamps from feature group to avoid duplicates
-print("Checking existing data to prevent duplicates...")
+# Fetch existing timestamps from feature group to avoid duplicates
+print("🕒 Checking existing data to prevent duplicates...")
 try:
     existing_df = aqi_fg.read()
     existing_times = set(existing_df["time"].astype(str))
 except Exception as e:
-    print(f"Could not read existing feature group (maybe empty): {e}")
+    print(f"⚠️ Could not read existing feature group (maybe empty): {e}")
     existing_times = set()
 
 # Filter out already existing records
 new_data = merged_df[~merged_df["time"].astype(str).isin(existing_times)]
 
 if not new_data.empty:
-    print(f"{len(new_data)} new records to insert (filtered for duplicates).")
+    print(f"📤 {len(new_data)} new records to insert (filtered for duplicates).")
     aqi_fg.insert(new_data)
-    print(" New unique data uploaded to Hopsworks Feature Store!")
+    print("✅ New unique data uploaded to Hopsworks Feature Store!")
 else:
-    print("No new data to insert — feature store is already up to date.")
+    print("✅ No new data to insert — feature store is already up to date.")
