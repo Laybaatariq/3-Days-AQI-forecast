@@ -115,6 +115,19 @@ except:
         online_enabled=True
     )
 
-# Insert cleaned data
+# ==========================================================
+# — Fix dtype mismatch for Hopsworks (int → bigint)
+# ==========================================================
+time_cols = ['year', 'month', 'day', 'hour', 'weekday']
+for col in time_cols:
+    if col in df_cleaned.columns:
+        df_cleaned[col] = df_cleaned[col].astype(np.int64)
+
+print("✅ Data types fixed for Hopsworks compatibility (int → bigint)")
+
+# ==========================================================
+# — Upload to Cleaned Feature Group
+# ==========================================================
 cleaned_fg.insert(df_cleaned, write_options={"wait_for_job": False})
-print("🎉 Cleaned data successfully appended to Feature Store!")
+print("🎉 Cleaned data appended successfully to Feature Store!")
+
