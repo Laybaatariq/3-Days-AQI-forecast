@@ -19,55 +19,63 @@ print("✅ Connected to Hopsworks project")
 # ==========================================================
 # — Load Raw Data Feature Group
 # ==========================================================
-RAW_FEATURE_GROUP = "karachi_aqi_weather"   # ⚠️ Check this exact name in your Hopsworks dashboard
-RAW_VERSION = 1                             # update if version differs
+RAW_FEATURE_GROUP = "karachi_aqi_weather"   # ⚠️ Exact name from Hopsworks
+RAW_VERSION = 1
 
 try:
     raw_fg = fs.get_feature_group(name=RAW_FEATURE_GROUP, version=RAW_VERSION)
     if raw_fg is None:
         raise ValueError("Feature group not found — returned None.")
     df = raw_fg.read()
-    print(f"✅ Raw data fetched from feature group '{RAW_FEATURE_GROUP}' (rows={df.shape[0]}, cols={df.shape[1]})")
+    print(f"✅ Raw data fetched from '{RAW_FEATURE_GROUP}' (rows={df.shape[0]}, cols={df.shape[1]})")
 except Exception as e:
     raise RuntimeError(f"❌ Error fetching raw feature group '{RAW_FEATURE_GROUP}': {e}")
 
 # ==========================================================
+# — Time-based Feature Engineering
+# ==========================================================
+if "time" in df.columns:
+    df["time"] = pd.to_datetime(df["time"])
+    df["year"] = df["time"].dt.year
+    df["month"] = df["time"].dt.month
+    df["day"] = df["time"].dt.day
+    df["hour"] = df["time"].dt.hour
+    df["weekday"] = df["time"].dt.weekday
+    print("🕒 Time-based features (year, month, day, hour, weekday) added.")
+else:
+    raise ValueError("❌ 'time' column missing in raw dataset!")
+
+# ==========================================================
 # — Preprocessing: Handle Skewness (PowerTransform)
 # ==========================================================
-# Select numeric features (excluding time and cloud_cover)
-num_features = df.select_dtypes(include=['float64', 'int64']).columns.drop('cloud_cover', errors='ignore')
+num_features = df.select_dtypes(include=["float64", "int64"]).columns.drop("cloud_cover", errors="ignore")
 
 if len(num_features) == 0:
-    raise ValueError("No numeric features found for transformation!")
+    raise ValueError("No numeric features found for PowerTransform!")
 
-pt = PowerTransformer(method='yeo-johnson')
+pt = PowerTransformer(method="yeo-johnson")
 df[num_features] = pt.fit_transform(df[num_features])
 print("✅ Left-skewed features normalized using Yeo-Johnson PowerTransformer")
 
-# Cloud cover (right-skewed) → log1p transform
-if 'cloud_cover' in df.columns:
-    df['cloud_cover'] = np.log1p(df['cloud_cover'])
+# Handle right-skewed cloud_cover
+if "cloud_cover" in df.columns:
+    df["cloud_cover"] = np.log1p(df["cloud_cover"])
 
 # ==========================================================
 # — Outlier Handling using IQR
 # ==========================================================
 pollutant_cols = [
-    'pm2_5', 'pm10', 'ozone',
-    'carbon_monoxide', 'nitrogen_dioxide', 'sulphur_dioxide',
-    'temperature_2m', 'wind_speed_10m', 'pressure_msl', 'relative_humidity_2m'
+    "pm2_5", "pm10", "ozone",
+    "carbon_monoxide", "nitrogen_dioxide", "sulphur_dioxide",
+    "temperature_2m", "wind_speed_10m", "pressure_msl", "relative_humidity_2m"
 ]
 
 def remove_outliers_iqr(df, columns, method="cap"):
-    """
-    method = "remove"  -> drop rows containing outliers
-    method = "cap"     -> cap outlier values to upper/lower bounds
-    """
     df_clean = df.copy()
     for col in columns:
         if col not in df_clean.columns:
             continue
-        Q1 = df_clean[col].quantile(0.25)
-        Q3 = df_clean[col].quantile(0.75)
+        Q1, Q3 = df_clean[col].quantile(0.25), df_clean[col].quantile(0.75)
         IQR = Q3 - Q1
         lower, upper = Q1 - 1.5 * IQR, Q3 + 1.5 * IQR
 
@@ -81,9 +89,9 @@ def remove_outliers_iqr(df, columns, method="cap"):
 df_cleaned = remove_outliers_iqr(df, pollutant_cols, method="cap")
 print(f"✅ Outlier capping completed (Before={df.shape}, After={df_cleaned.shape})")
 
-# Drop missing values just in case
+# Drop missing values
 df_cleaned = df_cleaned.dropna()
-print(f"✅ Cleaned data shape after dropping NAs: {df_cleaned.shape}")
+print(f"✅ Final cleaned data shape: {df_cleaned.shape}")
 
 # ==========================================================
 # — Upload to Cleaned Feature Group
@@ -103,10 +111,10 @@ except:
         name=CLEAN_FEATURE_GROUP,
         version=CLEAN_VERSION,
         primary_key=["time"],
-        description="Cleaned AQI data after PowerTransform normalization and outlier handling",
+        description="Cleaned AQI data after PowerTransform normalization, IQR capping, and time feature engineering",
         online_enabled=True
     )
 
-# Append cleaned data
+# Insert cleaned data
 cleaned_fg.insert(df_cleaned, write_options={"wait_for_job": False})
-print("🎉 Cleaned data appended successfully to Feature Store!")
+print("🎉 Cleaned data successfully appended to Feature Store!")
