@@ -1,11 +1,14 @@
-name: Daily AQI + Weather Fetch
+name: Daily AQI + Weather + Cleaning Pipeline
 
 on:
   schedule:
-    - cron: '0 3 * * *'  # 8 AM Pakistan time
-  workflow_dispatch:      # allow manual run
+    - cron: '0 3 * * *'  # Runs daily at 8 AM Pakistan time
+  workflow_dispatch:      # Allow manual run
 
 jobs:
+  # ------------------------------
+  # 1️⃣ Job: Fetch & upload raw AQI + weather data
+  # ------------------------------
   update-aqi:
     runs-on: ubuntu-latest
 
@@ -28,3 +31,30 @@ jobs:
         env:
           HOPSWORKS_API_KEY: ${{ secrets.colab_key }}
         run: python scripts/fetch_API_data.py
+
+  # ------------------------------
+  # 2️⃣ Job: Clean and upload processed data
+  # ------------------------------
+  clean-and-upload:
+    runs-on: ubuntu-latest
+    needs: update-aqi   # Run only after 'update-aqi' completes
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install "hopsworks[python]==4.2.*" pandas numpy scikit-learn pyarrow
+
+      - name: Run cleaning + upload script
+        working-directory: ${{ github.workspace }}  # repo root
+        env:
+          HOPSWORKS_API_KEY: ${{ secrets.colab_key }}
+        run: python scripts/clean_and_upload.py
