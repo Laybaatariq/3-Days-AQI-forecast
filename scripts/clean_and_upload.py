@@ -19,7 +19,7 @@ print("✅ Connected to Hopsworks project")
 # ==========================================================
 # — Load Raw Data Feature Group
 # ==========================================================
-RAW_FEATURE_GROUP = "Karachi_aqi_weather"   # ⚠️ Check this exact name in your Hopsworks dashboard
+RAW_FEATURE_GROUP = "karachi_aqi_weather"   # ⚠️ Check this exact name in your Hopsworks dashboard
 RAW_VERSION = 1                             # update if version differs
 
 try:
