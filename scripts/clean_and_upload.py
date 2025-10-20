@@ -94,26 +94,53 @@ df_cleaned = df_cleaned.dropna()
 print(f"✅ Final cleaned data shape: {df_cleaned.shape}")
 
 # ==========================================================
-# — Upload to Cleaned Feature Group
+# — Upload to Cleaned Feature Group (Fixed Version)
 # ==========================================================
+
 CLEAN_FEATURE_GROUP = "cleaned_aqi_data"
 CLEAN_VERSION = 1
 
+# Ensure 'time' is a string (Hopsworks requires string PK)
+if "time" in df_cleaned.columns:
+    df_cleaned["time"] = df_cleaned["time"].astype(str)
+else:
+    raise KeyError("❌ 'time' column missing — required as primary key!")
+
+# Drop unwanted columns (if any like 'Unnamed: 0')
+if "Unnamed: 0" in df_cleaned.columns:
+    df_cleaned = df_cleaned.drop(columns=["Unnamed: 0"])
+
+# Make sure integer time features are int64
+time_cols = ['year', 'month', 'day', 'hour', 'weekday']
+for col in time_cols:
+    if col in df_cleaned.columns:
+        df_cleaned[col] = df_cleaned[col].astype(np.int64)
+
+print("✅ Data types fixed for Hopsworks compatibility (int → bigint)")
+
+# Create or update feature group
 try:
-    cleaned_fg = fs.get_feature_group(name=CLEAN_FEATURE_GROUP, version=CLEAN_VERSION)
-    if cleaned_fg is not None:
-        print(f"✅ Found existing feature group '{CLEAN_FEATURE_GROUP}' — appending new data")
-    else:
-        raise ValueError("Feature group not found.")
-except:
-    print(f"⚙️ Creating new feature group '{CLEAN_FEATURE_GROUP}'...")
-    cleaned_fg = fs.create_feature_group(
+    cleaned_fg = fs.get_or_create_feature_group(
         name=CLEAN_FEATURE_GROUP,
         version=CLEAN_VERSION,
         primary_key=["time"],
-        description="Cleaned AQI data after PowerTransform normalization, IQR capping, and time feature engineering",
+        description="Cleaned AQI data with normalized and capped pollutants + time-based features",
         online_enabled=True
     )
+    cleaned_fg.insert(df_cleaned, write_options={"wait_for_job": False})
+    print(f"🎉 Successfully uploaded cleaned data → Feature Group: '{CLEAN_FEATURE_GROUP}' (version={CLEAN_VERSION})")
+
+except Exception as e:
+    print(f"⚠️ Upload failed due to schema/type mismatch → creating new version...")
+    cleaned_fg = fs.get_or_create_feature_group(
+        name=CLEAN_FEATURE_GROUP,
+        version=CLEAN_VERSION + 1,
+        primary_key=["time"],
+        description="Auto-versioned cleaned AQI dataset with compatible schema",
+        online_enabled=True
+    )
+    cleaned_fg.insert(df_cleaned, write_options={"wait_for_job": False})
+    print(f"✅ Uploaded successfully with version={CLEAN_VERSION + 1}")
 
 # ==========================================================
 # — Fix dtype mismatch for Hopsworks (int → bigint)
