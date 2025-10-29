@@ -1,7 +1,5 @@
 # ==========================================================
-# clean_and_upload.py
-# Purpose: Read raw AQI data → Normalize → Remove outliers → Upload cleaned version
-# Author: Laiba Tariq
+# clean_and_upload.py  — Final Version
 # ==========================================================
 
 import hopsworks
@@ -19,34 +17,29 @@ print("✅ Connected to Hopsworks project")
 # ==========================================================
 # — Load Raw Data Feature Group
 # ==========================================================
-RAW_FEATURE_GROUP = "karachi_aqi_weather"   # ⚠️ Exact name from Hopsworks
+RAW_FEATURE_GROUP = "karachi_aqi_weather"
 RAW_VERSION = 1
 
-try:
-    raw_fg = fs.get_feature_group(name=RAW_FEATURE_GROUP, version=RAW_VERSION)
-    if raw_fg is None:
-        raise ValueError("Feature group not found — returned None.")
-    df = raw_fg.read()
-    print(f"✅ Raw data fetched from '{RAW_FEATURE_GROUP}' (rows={df.shape[0]}, cols={df.shape[1]})")
-except Exception as e:
-    raise RuntimeError(f"❌ Error fetching raw feature group '{RAW_FEATURE_GROUP}': {e}")
+raw_fg = fs.get_feature_group(name=RAW_FEATURE_GROUP, version=RAW_VERSION)
+df = raw_fg.read()
+print(f"✅ Raw data fetched (rows={df.shape[0]}, cols={df.shape[1]})")
 
 # ==========================================================
 # — Time-based Feature Engineering
 # ==========================================================
 if "time" in df.columns:
-    df["time"] = pd.to_datetime(df["time"])
+    df["time"] = pd.to_datetime(df["time"], errors="coerce")
     df["year"] = df["time"].dt.year
     df["month"] = df["time"].dt.month
     df["day"] = df["time"].dt.day
     df["hour"] = df["time"].dt.hour
     df["weekday"] = df["time"].dt.weekday
-    print("🕒 Time-based features (year, month, day, hour, weekday) added.")
+    print("🕒 Added datetime features: year, month, day, hour, weekday")
 else:
     raise ValueError("❌ 'time' column missing in raw dataset!")
 
 # ==========================================================
-# — Preprocessing: Handle Skewness (PowerTransform)
+# — Preprocessing: Normalize skewed features
 # ==========================================================
 num_features = df.select_dtypes(include=["float64", "int64"]).columns.drop("cloud_cover", errors="ignore")
 
@@ -55,9 +48,8 @@ if len(num_features) == 0:
 
 pt = PowerTransformer(method="yeo-johnson")
 df[num_features] = pt.fit_transform(df[num_features])
-print("✅ Left-skewed features normalized using Yeo-Johnson PowerTransformer")
+print("✅ Skewed features normalized using PowerTransformer")
 
-# Handle right-skewed cloud_cover
 if "cloud_cover" in df.columns:
     df["cloud_cover"] = np.log1p(df["cloud_cover"])
 
@@ -78,7 +70,6 @@ def remove_outliers_iqr(df, columns, method="cap"):
         Q1, Q3 = df_clean[col].quantile(0.25), df_clean[col].quantile(0.75)
         IQR = Q3 - Q1
         lower, upper = Q1 - 1.5 * IQR, Q3 + 1.5 * IQR
-
         if method == "remove":
             df_clean = df_clean[(df_clean[col] >= lower) & (df_clean[col] <= upper)]
         elif method == "cap":
@@ -87,74 +78,41 @@ def remove_outliers_iqr(df, columns, method="cap"):
     return df_clean
 
 df_cleaned = remove_outliers_iqr(df, pollutant_cols, method="cap")
-print(f"✅ Outlier capping completed (Before={df.shape}, After={df_cleaned.shape})")
-
-# Drop missing values
 df_cleaned = df_cleaned.dropna()
-print(f"✅ Final cleaned data shape: {df_cleaned.shape}")
+print(f"✅ Outliers capped and NaNs dropped. Final shape: {df_cleaned.shape}")
 
 # ==========================================================
-# — Upload to Cleaned Feature Group (Fixed Version)
+# — Upload to Cleaned Feature Group (Keep same version)
 # ==========================================================
-
 CLEAN_FEATURE_GROUP = "cleaned_aqi_data"
 CLEAN_VERSION = 1
 
-# Ensure 'time' is a string (Hopsworks requires string PK)
+# Ensure datetime type for 'time' (not string)
 if "time" in df_cleaned.columns:
-    df_cleaned["time"] = df_cleaned["time"].astype(str)
+    df_cleaned["time"] = pd.to_datetime(df_cleaned["time"], errors="coerce")
 else:
     raise KeyError("❌ 'time' column missing — required as primary key!")
 
-# Drop unwanted columns (if any like 'Unnamed: 0')
+# Drop any irrelevant columns
 if "Unnamed: 0" in df_cleaned.columns:
     df_cleaned = df_cleaned.drop(columns=["Unnamed: 0"])
 
-# Make sure integer time features are int64
-time_cols = ['year', 'month', 'day', 'hour', 'weekday']
-for col in time_cols:
+# Fix integer time columns
+for col in ['year', 'month', 'day', 'hour', 'weekday']:
     if col in df_cleaned.columns:
         df_cleaned[col] = df_cleaned[col].astype(np.int64)
 
-print("✅ Data types fixed for Hopsworks compatibility (int → bigint)")
+print("✅ Datetime + integer columns formatted correctly.")
 
-# Create or update feature group
-try:
-    cleaned_fg = fs.get_or_create_feature_group(
-        name=CLEAN_FEATURE_GROUP,
-        version=CLEAN_VERSION,
-        primary_key=["time"],
-        description="Cleaned AQI data with normalized and capped pollutants + time-based features",
-        online_enabled=True
-    )
-    cleaned_fg.insert(df_cleaned, write_options={"wait_for_job": False})
-    print(f"🎉 Successfully uploaded cleaned data → Feature Group: '{CLEAN_FEATURE_GROUP}' (version={CLEAN_VERSION})")
+# Create or update Feature Group safely
+cleaned_fg = fs.get_or_create_feature_group(
+    name=CLEAN_FEATURE_GROUP,
+    version=CLEAN_VERSION,
+    primary_key=["time"],  # Keep 'time' as timestamp PK
+    description="Cleaned AQI data with timestamp and capped pollutants",
+    online_enabled=True
+)
 
-except Exception as e:
-    print(f"⚠️ Upload failed due to schema/type mismatch → creating new version...")
-    cleaned_fg = fs.get_or_create_feature_group(
-        name=CLEAN_FEATURE_GROUP,
-        version=CLEAN_VERSION + 1,
-        primary_key=["time"],
-        description="Auto-versioned cleaned AQI dataset with compatible schema",
-        online_enabled=True
-    )
-    cleaned_fg.insert(df_cleaned, write_options={"wait_for_job": False})
-    print(f"✅ Uploaded successfully with version={CLEAN_VERSION + 1}")
-
-# ==========================================================
-# — Fix dtype mismatch for Hopsworks (int → bigint)
-# ==========================================================
-time_cols = ['year', 'month', 'day', 'hour', 'weekday']
-for col in time_cols:
-    if col in df_cleaned.columns:
-        df_cleaned[col] = df_cleaned[col].astype(np.int64)
-
-print("✅ Data types fixed for Hopsworks compatibility (int → bigint)")
-
-# ==========================================================
-# — Upload to Cleaned Feature Group
-# ==========================================================
+# Insert data into version 1 (no new version)
 cleaned_fg.insert(df_cleaned, write_options={"wait_for_job": False})
-print("🎉 Cleaned data appended successfully to Feature Store!")
-
+print(f"🎉 Successfully uploaded cleaned data to version {CLEAN_VERSION}")
