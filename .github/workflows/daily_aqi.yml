@@ -84,4 +84,4 @@ jobs:
         working-directory: ${{ github.workspace }}
         env:
           HOPSWORKS_API_KEY: ${{ secrets.colab_key }}
-        run: python scripts/feature_engineering.py
+        run: python scripts/feature_engineer_aqi.py
