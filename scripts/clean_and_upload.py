@@ -52,18 +52,6 @@ else:
     raise ValueError("❌ 'time' column missing in raw dataset!")
 
 # ----------------------------------------------------------
-# Normalize numeric columns (Yeo-Johnson)
-# ----------------------------------------------------------
-num_features = df.select_dtypes(include=["float64", "int64"]).columns.drop("cloud_cover", errors="ignore")
-
-pt = PowerTransformer(method="yeo-johnson")
-df[num_features] = pt.fit_transform(df[num_features])
-print("✅ Numeric features normalized (Yeo-Johnson)")
-
-if "cloud_cover" in df.columns:
-    df["cloud_cover"] = np.log1p(df["cloud_cover"])
-
-# ----------------------------------------------------------
 # Outlier Capping
 # ----------------------------------------------------------
 pollutant_cols = [
