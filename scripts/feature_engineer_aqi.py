@@ -1,5 +1,5 @@
 # ============================================================
-# 🧩 FEATURE ENGINEERING PIPELINE — AQI 3-Day Forecast (with Deduplication)
+#  FEATURE ENGINEERING PIPELINE — AQI 3-Day Forecast (with Deduplication)
 # ============================================================
 # This script:
 # 1. Fetches cleaned data from Feature Store (cleaned_aqi_data)
@@ -15,18 +15,18 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # ------------------------------------------------------------
-# 🧠 Connect to Hopsworks & Fetch Cleaned Data
+#  Connect to Hopsworks & Fetch Cleaned Data
 # ------------------------------------------------------------
 project = hopsworks.login()
 fs = project.get_feature_store()
 
-print("📥 Fetching cleaned AQI data from Feature Store...")
+print(" Fetching cleaned AQI data from Feature Store...")
 cleaned_fg = fs.get_feature_group(name="cleaned_aqi_data", version=1)
 df_cleaned = cleaned_fg.read()
-print(f"✅ Cleaned data fetched — Shape: {df_cleaned.shape}")
+print(f" Cleaned data fetched — Shape: {df_cleaned.shape}")
 
 # ------------------------------------------------------------
-# 🧩 1️⃣ Datetime Feature Extraction
+#  Datetime Feature Extraction
 # ------------------------------------------------------------
 def process_datetime_features(df):
     df = df.copy()
@@ -47,13 +47,13 @@ def process_datetime_features(df):
         df['month_sin'] = np.sin(2 * np.pi * df['month'] / 12)
         df['month_cos'] = np.cos(2 * np.pi * df['month'] / 12)
         df.drop(columns=[time_col], inplace=True)
-        print(f"✅ Extracted datetime features from '{time_col}'")
+        print(f" Extracted datetime features from '{time_col}'")
     else:
-        print("⚠️ No time column found — skipping datetime extraction.")
+        print(" No time column found — skipping datetime extraction.")
     return df
 
 # ------------------------------------------------------------
-# 🧩 2️⃣ Season Encoding
+#  Season Encoding
 # ------------------------------------------------------------
 def add_and_encode_season(df):
     df = df.copy()
@@ -72,13 +72,13 @@ def add_and_encode_season(df):
 
     if 'season' in df.columns:
         df = pd.get_dummies(df, columns=['season'], prefix='season', dtype=float)
-        print("✅ One-hot encoded 'season' column.")
+        print(" One-hot encoded 'season' column.")
     else:
-        print("⚠️ 'season' column not found — skipping encoding.")
+        print(" 'season' column not found — skipping encoding.")
     return df
 
 # ------------------------------------------------------------
-# 🧩 3️⃣ Lag, Rolling, and Diff Features
+#  Lag, Rolling, and Diff Features
 # ------------------------------------------------------------
 def add_aqi_lag_features(df):
     df = df.copy()
@@ -92,13 +92,13 @@ def add_aqi_lag_features(df):
         df[f'{aqi_col}_lag2'] = df[aqi_col].shift(2)
         df[f'{aqi_col}_rolling_mean3'] = df[aqi_col].rolling(window=3).mean()
         df[f'{aqi_col}_diff'] = df[aqi_col].diff()
-        print("✅ Added AQI lag and rolling features.")
+        print(" Added AQI lag and rolling features.")
     else:
-        print("⚠️ 'AQI' column not found — skipping lag features.")
+        print(" 'AQI' column not found — skipping lag features.")
     return df
 
 # ------------------------------------------------------------
-# 🧩 4️⃣ Add Prediction Targets (for next 3 days)
+#  Add Prediction Targets (for next 3 days)
 # ------------------------------------------------------------
 def add_prediction_targets(df):
     df = df.copy()
@@ -107,18 +107,18 @@ def add_prediction_targets(df):
             aqi_col = c
             break
     else:
-        print("⚠️ 'AQI' column not found — skipping targets.")
+        print(" 'AQI' column not found — skipping targets.")
         return df
 
     # FS-safe names (lowercase + underscores only)
     df['target_aqi_t1'] = df[aqi_col].shift(-1)
     df['target_aqi_t2'] = df[aqi_col].shift(-2)
     df['target_aqi_t3'] = df[aqi_col].shift(-3)
-    print("🎯 Added 3-day ahead target columns for AQI.")
+    print(" Added 3-day ahead target columns for AQI.")
     return df
 
 # ------------------------------------------------------------
-# 🧩 5️⃣ Full Feature Engineering Pipeline
+#  Full Feature Engineering Pipeline
 # ------------------------------------------------------------
 def run_feature_engineering(df_cleaned):
     df = df_cleaned.copy()
@@ -129,22 +129,22 @@ def run_feature_engineering(df_cleaned):
 
     non_numeric = df.select_dtypes(exclude=[np.number]).columns
     if len(non_numeric) > 0:
-        print(f"⚠️ Dropping non-numeric columns: {list(non_numeric)}")
+        print(f" Dropping non-numeric columns: {list(non_numeric)}")
         df = df.drop(columns=non_numeric)
 
     df = df.dropna().reset_index(drop=True)
-    print(f"\n✅ Final engineered feature matrix shape: {df.shape}")
+    print(f"\n Final engineered feature matrix shape: {df.shape}")
     return df
 
 # ------------------------------------------------------------
-# 🚀 Run Feature Engineering
+#  Run Feature Engineering
 # ------------------------------------------------------------
 df_feature = run_feature_engineering(df_cleaned)
 
 # ------------------------------------------------------------
-# 💾 Upload to Feature Store (with Deduplication)
+#  Upload to Feature Store (with Deduplication)
 # ------------------------------------------------------------
-print("\n📤 Preparing to upload engineered features to Feature Store...")
+print("\n Preparing to upload engineered features to Feature Store...")
 
 aqi_fg = fs.get_or_create_feature_group(
     name="aqi_feature_engineered",
@@ -154,15 +154,15 @@ aqi_fg = fs.get_or_create_feature_group(
     online_enabled=True
 )
 
-# 🧱 Read existing data (if any)
+#  Read existing data (if any)
 try:
     df_existing = aqi_fg.read()
-    print(f"📂 Existing records found: {df_existing.shape[0]}")
+    print(f" Existing records found: {df_existing.shape[0]}")
 except Exception as e:
-    print("⚠️ No existing data found — creating new feature group.")
+    print(" No existing data found — creating new feature group.")
     df_existing = pd.DataFrame(columns=df_feature.columns)
 
-# 🧮 Deduplicate based on primary key
+# Deduplicate based on primary key
 merge_keys = ["year", "month", "day", "hour"]
 if not df_existing.empty:
     df_merged = df_feature.merge(df_existing[merge_keys], on=merge_keys, how="left", indicator=True)
@@ -170,11 +170,11 @@ if not df_existing.empty:
 else:
     df_new = df_feature
 
-print(f"🧩 New unseen rows to insert: {df_new.shape[0]}")
+print(f" New unseen rows to insert: {df_new.shape[0]}")
 
 # Insert only new rows
 if df_new.shape[0] > 0:
     aqi_fg.insert(df_new)
-    print("✅ Successfully inserted new rows into Feature Store!")
+    print(" Successfully inserted new rows into Feature Store!")
 else:
-    print("✅ No new data to insert — feature store is already up to date.")
+    print(" No new data to insert — feature store is already up to date.")
