@@ -1,6 +1,6 @@
 # 3-Day Hourly AQI Prediction Dashboard
 
-This project is an interactive **Streamlit-based web application** designed to forecast the **Air Quality Index (AQI)** for the next **3 days (hourly basis)**.  
+This project is an interactive **Machine Learning and Streamlit-based Dashboard** designed to forecast the **Air Quality Index (AQI)** for the next **3 days (hourly basis)**.  
 It integrates **machine learning models**, **Hopsworks feature storage**, and a **CI/CD pipeline** via **GitHub Actions**, ensuring continuous updates and deployment of the system.
 
 ---
