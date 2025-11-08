@@ -47,7 +47,6 @@ The system architecture combines:
 - 3-day hourly AQI predictions.
 - Color-coded categories.
 - Trend graphs using Plotly.
-- Separate daily tables for detailed forecasts.
 
 ---
 
@@ -68,7 +67,6 @@ The system architecture combines:
 | **ML Models** | RandomForest, XGBoost, LightGBM |
 | **Feature Store** | Hopsworks |
 | **CI/CD** | GitHub Actions |
-| **Forecasting (optional)** | Prophet, pmdarima |
 | **Explainability** | SHAP |
 | **Visualization** | Plotly, Matplotlib |
 | **Utilities** | Pandas, NumPy, tqdm, python-dotenv |
